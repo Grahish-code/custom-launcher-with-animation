@@ -1,4 +1,3 @@
-// MainActivity.kt
 package com.example.virtual_pet
 
 import io.flutter.embedding.android.FlutterActivity
@@ -16,13 +15,14 @@ class MainActivity: FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         GeneratedPluginRegistrant.registerWith(flutterEngine)
 
-        // Register your existing app launcher plugin
+        // Register your existing app launcher plugin (make sure it's instantiated)
         flutterEngine.plugins.add(LaunchableAppsPlugin())
 
-        // Register the new wallpaper analysis plugin
+        // Register the wallpaper analysis plugin using MethodChannel
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, WALLPAPER_CHANNEL)
             .setMethodCallHandler(WallpaperPlugin(this))
 
-        flutterEngine.plugins.add(WidgetPlugin())
+        // Fix: Instantiate the WorkingWidgetPlugin (add parentheses)
+        flutterEngine.plugins.add(WorkingWidgetPlugin())
     }
 }

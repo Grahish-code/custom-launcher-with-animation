@@ -1,264 +1,206 @@
-// widget_manager.dart
-// Manages Android widgets integration with Flutter
-
+// working_widget_manager.dart
+// This implementation works WITHOUT BIND_APPWIDGET permission
 import 'dart:typed_data';
 import 'package:flutter/services.dart';
 
-class WidgetManager {
-  static const MethodChannel _channel = MethodChannel('com.example.virtual_pet/widgets');
+class WorkingWidgetManager {
+  static const MethodChannel _channel = MethodChannel('com.example.virtual_pet/working_widgets');
 
-  /// Called when a widget is added (via picker or bind/configure flow)
-  static Function(Map<String, dynamic>)? onWidgetAdded;
+  // Widget host ID - should be unique for your app
+  static const int HOST_ID = 12345;
 
-  /// Called when user denies widget bind permission
-  static Function()? onWidgetPermissionDenied;
-
-  /// Initialize method channel callbacks
-  static void initialize() {
-    _channel.setMethodCallHandler(_handleMethodCall);
-  }
-
-  static Future<void> _handleMethodCall(MethodCall call) async {
-    switch (call.method) {
-      case 'onWidgetAdded':
-        if (onWidgetAdded != null) {
-          onWidgetAdded!(Map<String, dynamic>.from(call.arguments));
-        }
-        break;
-      case 'onWidgetPermissionDenied':
-        if (onWidgetPermissionDenied != null) {
-          onWidgetPermissionDenied!();
-        }
-        break;
-    }
-  }
-
-  /// Get list of all available widgets on the device
-  static Future<List<AndroidWidget>> getAvailableWidgets() async {
+  /// Initialize the widget host
+  static Future<bool> initializeWidgetHost() async {
     try {
-      final List<dynamic> widgets = await _channel.invokeMethod('getAvailableWidgets');
-      return widgets.map((w) => AndroidWidget.fromMap(Map<String, dynamic>.from(w))).toList();
+      return await _channel.invokeMethod('initializeWidgetHost', {
+        'hostId': HOST_ID,
+      });
     } catch (e) {
-      print('Error getting available widgets: $e');
-      return [];
+      print('❌ Error initializing widget host: $e');
+      return false;
     }
   }
 
-  /// Pick a widget and return its ID + provider info
-  static Future<PickedWidget?> pickWidget() async {
+  /// Start listening for widgets - this creates the host
+  static Future<bool> startListening() async {
     try {
-      final Map<String, dynamic> result = Map<String, dynamic>.from(await _channel.invokeMethod('pickWidget'));
-      return PickedWidget(
-        widgetId: result['widgetId'] ?? -1,
-        packageName: result['packageName'] ?? '',
-        className: result['className'] ?? '',
+      return await _channel.invokeMethod('startListening');
+    } catch (e) {
+      print('❌ Error starting widget listening: $e');
+      return false;
+    }
+  }
+
+  /// Stop listening for widgets
+  static Future<bool> stopListening() async {
+    try {
+      return await _channel.invokeMethod('stopListening');
+    } catch (e) {
+      print('❌ Error stopping widget listening: $e');
+      return false;
+    }
+  }
+
+  /// Add widget using system picker (this is the working approach)
+  static Future<AddWidgetResult> addWidgetFromPicker() async {
+    try {
+      print('🎯 Requesting widget addition via system picker...');
+
+      final result = await _channel.invokeMethod('addWidgetFromPicker', {
+        'hostId': HOST_ID,
+      });
+
+      return AddWidgetResult.fromMap(Map<String, dynamic>.from(result));
+    } catch (e) {
+      print('❌ Error adding widget from picker: $e');
+      return AddWidgetResult(
+        success: false,
+        message: 'Error: $e',
       );
-    } catch (e) {
-      print('Error picking widget: $e');
-      return null;
     }
   }
 
-  /// Add a widget manually
-  static Future<WidgetAddResult?> addWidget({
-    required String packageName,
-    required String className,
-    int width = 300,
-    int height = 200,
-  }) async {
+  /// Get all active widgets
+  static Future<List<ActiveWidget>> getActiveWidgets() async {
     try {
-      final result = await _channel.invokeMethod('addWidget', {
-        'packageName': packageName,
-        'className': className,
-        'width': width,
-        'height': height,
-      });
+      final result = await _channel.invokeMethod('getActiveWidgets');
+      if (result == null) return [];
 
-      final map = Map<String, dynamic>.from(result);
-
-      return WidgetAddResult.fromMap(map);
+      final widgets = List<Map<String, dynamic>>.from(result);
+      return widgets.map((w) => ActiveWidget.fromMap(w)).toList();
     } catch (e) {
-      print('Error adding widget: $e');
-      return null;
-    }
-  }
-
-  static Future<bool> removeWidget(int widgetId) async {
-    try {
-      return await _channel.invokeMethod('removeWidget', {'widgetId': widgetId});
-    } catch (e) {
-      print('Error removing widget: $e');
-      return false;
-    }
-  }
-
-  static Future<WidgetSnapshot?> getWidgetSnapshot(int widgetId) async {
-    try {
-      final Map<String, dynamic> result = await _channel.invokeMethod('getWidgetView', {
-        'widgetId': widgetId,
-      });
-      return WidgetSnapshot.fromMap(result);
-    } catch (e) {
-      print('Error getting widget snapshot: $e');
-      return null;
-    }
-  }
-
-  static Future<bool> resizeWidget(int widgetId, int width, int height) async {
-    try {
-      return await _channel.invokeMethod('resizeWidget', {
-        'widgetId': widgetId,
-        'width': width,
-        'height': height,
-      });
-    } catch (e) {
-      print('Error resizing widget: $e');
-      return false;
-    }
-  }
-
-  static Future<List<InstalledWidget>> getInstalledWidgets() async {
-    try {
-      final List<dynamic> widgets = await _channel.invokeMethod('getInstalledWidgets');
-      return widgets.map((w) => InstalledWidget.fromMap(Map<String, dynamic>.from(w))).toList();
-    } catch (e) {
-      print('Error getting installed widgets: $e');
+      print('❌ Error getting active widgets: $e');
       return [];
+    }
+  }
+
+  /// Capture widget as bitmap
+  static Future<WidgetBitmap?> captureWidget(int appWidgetId) async {
+    try {
+      final result = await _channel.invokeMethod('captureWidget', {
+        'appWidgetId': appWidgetId,
+        'width': 320,
+        'height': 180,
+      });
+
+      if (result == null) return null;
+      return WidgetBitmap.fromMap(Map<String, dynamic>.from(result));
+    } catch (e) {
+      print('❌ Error capturing widget $appWidgetId: $e');
+      return null;
+    }
+  }
+
+  /// Remove widget
+  static Future<bool> removeWidget(int appWidgetId) async {
+    try {
+      return await _channel.invokeMethod('removeWidget', {
+        'appWidgetId': appWidgetId,
+      });
+    } catch (e) {
+      print('❌ Error removing widget $appWidgetId: $e');
+      return false;
+    }
+  }
+
+  /// Check if widget binding is available (will always be false for regular apps)
+  static Future<bool> canBindWidgets() async {
+    try {
+      return await _channel.invokeMethod('canBindWidgets');
+    } catch (e) {
+      print('❌ Error checking bind widgets: $e');
+      return false;
     }
   }
 }
 
 // ==================== MODELS ====================
 
-class AndroidWidget {
+class AddWidgetResult {
+  final bool success;
+  final String message;
+  final int? appWidgetId;
+  final String? widgetLabel;
+  final String? packageName;
+
+  AddWidgetResult({
+    required this.success,
+    required this.message,
+    this.appWidgetId,
+    this.widgetLabel,
+    this.packageName,
+  });
+
+  factory AddWidgetResult.fromMap(Map<String, dynamic> map) {
+    return AddWidgetResult(
+      success: map['success'] ?? false,
+      message: map['message'] ?? '',
+      appWidgetId: map['appWidgetId'],
+      widgetLabel: map['widgetLabel'],
+      packageName: map['packageName'],
+    );
+  }
+}
+
+class ActiveWidget {
+  final int appWidgetId;
+  final String label;
   final String packageName;
   final String className;
-  final String label;
   final int minWidth;
   final int minHeight;
-  final int minResizeWidth;
-  final int minResizeHeight;
-  final int resizeMode;
-  final int widgetCategory;
-  final Uint8List? previewImage;
+  final bool isConfigured;
 
-  AndroidWidget({
+  ActiveWidget({
+    required this.appWidgetId,
+    required this.label,
     required this.packageName,
     required this.className,
-    required this.label,
     required this.minWidth,
     required this.minHeight,
-    required this.minResizeWidth,
-    required this.minResizeHeight,
-    required this.resizeMode,
-    required this.widgetCategory,
-    this.previewImage,
+    required this.isConfigured,
   });
 
-  factory AndroidWidget.fromMap(Map<String, dynamic> map) {
-    return AndroidWidget(
+  factory ActiveWidget.fromMap(Map<String, dynamic> map) {
+    return ActiveWidget(
+      appWidgetId: map['appWidgetId'] ?? -1,
+      label: map['label'] ?? 'Unknown Widget',
       packageName: map['packageName'] ?? '',
       className: map['className'] ?? '',
-      label: map['label'] ?? '',
       minWidth: map['minWidth'] ?? 0,
       minHeight: map['minHeight'] ?? 0,
-      minResizeWidth: map['minResizeWidth'] ?? 0,
-      minResizeHeight: map['minResizeHeight'] ?? 0,
-      resizeMode: map['resizeMode'] ?? 0,
-      widgetCategory: map['widgetCategory'] ?? 0,
-      previewImage: map['previewImage'] != null
-          ? Uint8List.fromList(List<int>.from(map['previewImage']))
-          : null,
+      isConfigured: map['isConfigured'] ?? false,
     );
   }
 }
 
-class PickedWidget {
-  final int widgetId;
-  final String packageName;
-  final String className;
-
-  PickedWidget({
-    required this.widgetId,
-    required this.packageName,
-    required this.className,
-  });
-}
-
-class WidgetAddResult {
-  final int widgetId;
-  final bool success;
-  final bool needsPermission;
-  final int width;
-  final int height;
-
-  WidgetAddResult({
-    required this.widgetId,
-    required this.success,
-    this.needsPermission = false,
-    required this.width,
-    required this.height,
-  });
-
-  factory WidgetAddResult.fromMap(Map<String, dynamic> map) {
-    return WidgetAddResult(
-      widgetId: map['widgetId'] ?? -1,
-      success: map['success'] ?? false,
-      needsPermission: map['needsPermission'] ?? false,
-      width: map['width'] ?? 0,
-      height: map['height'] ?? 0,
-    );
-  }
-}
-
-class WidgetSnapshot {
-  final int widgetId;
+class WidgetBitmap {
+  final int appWidgetId;
   final Uint8List imageBytes;
   final int width;
   final int height;
+  final bool isValid;
 
-  WidgetSnapshot({
-    required this.widgetId,
+  WidgetBitmap({
+    required this.appWidgetId,
     required this.imageBytes,
     required this.width,
     required this.height,
+    required this.isValid,
   });
 
-  factory WidgetSnapshot.fromMap(Map<String, dynamic> map) {
-    return WidgetSnapshot(
-      widgetId: map['widgetId'] ?? -1,
-      imageBytes: Uint8List.fromList(List<int>.from(map['imageBytes'])),
+  factory WidgetBitmap.fromMap(Map<String, dynamic> map) {
+    final imageData = map['imageBytes'];
+    final bytes = imageData != null
+        ? Uint8List.fromList(List<int>.from(imageData))
+        : Uint8List(0);
+
+    return WidgetBitmap(
+      appWidgetId: map['appWidgetId'] ?? -1,
+      imageBytes: bytes,
       width: map['width'] ?? 0,
       height: map['height'] ?? 0,
-    );
-  }
-}
-
-class InstalledWidget {
-  final int widgetId;
-  final String? packageName;
-  final String? className;
-  final String? label;
-  final int width;
-  final int height;
-
-  InstalledWidget({
-    required this.widgetId,
-    this.packageName,
-    this.className,
-    this.label,
-    required this.width,
-    required this.height,
-  });
-
-  factory InstalledWidget.fromMap(Map<String, dynamic> map) {
-    return InstalledWidget(
-      widgetId: map['widgetId'] ?? -1,
-      packageName: map['packageName'],
-      className: map['className'],
-      label: map['label'],
-      width: map['width'] ?? 0,
-      height: map['height'] ?? 0,
+      isValid: map['isValid'] ?? false,
     );
   }
 }
